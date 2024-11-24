@@ -248,3 +248,19 @@
             (ok (tuple 
                 (amount-x amount-x)
                 (amount-y amount-y))))))
+
+;; Helper functions
+(define-private (sqrt-iter (n uint) (iter uint) (guess uint))
+    (let ((quotient (/ n guess))
+          (new-guess (/ (+ guess quotient) u2)))
+        (if (or 
+            (is-eq iter u0)
+            (is-eq guess new-guess) 
+            (is-eq guess (+ u1 new-guess)))
+            guess
+            (sqrt-iter n (- iter u1) new-guess))))
+
+(define-private (sqrt (n uint))
+    (if (is-eq n u0)
+        u0
+        (sqrt-iter n u10 n)))  ;; Set maximum 10 iterations                
