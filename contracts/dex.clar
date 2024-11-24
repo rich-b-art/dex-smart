@@ -57,3 +57,9 @@
     (map-get? liquidity-providers
         { pool-id: { token-x: token-x, token-y: token-y },
           provider: provider }))
+
+;; Price calculation functions
+(define-private (calculate-price (amount-in uint) (reserve-in uint) (reserve-out uint))
+    (let ((amount-with-fee (* amount-in u997)))
+        (/ (* amount-with-fee reserve-out)
+           (+ (* reserve-in u1000) amount-with-fee))))
