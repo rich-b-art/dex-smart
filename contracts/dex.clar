@@ -49,3 +49,11 @@
 ;; Getters
 (define-read-only (get-pool-details (token-x principal) (token-y principal))
     (map-get? pools { token-x: token-x, token-y: token-y }))
+
+(define-read-only (get-provider-liquidity 
+    (token-x principal) 
+    (token-y principal) 
+    (provider principal))
+    (map-get? liquidity-providers
+        { pool-id: { token-x: token-x, token-y: token-y },
+          provider: provider }))
