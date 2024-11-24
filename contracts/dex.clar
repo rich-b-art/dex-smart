@@ -74,3 +74,23 @@
             (tuple 
                 (optimal-a (/ (* amount-b reserve-a) reserve-b))
                 (optimal-b amount-b)))))
+
+;; Core functions
+(define-public (create-pool (token-x principal) (token-y principal) (initial-x uint) (initial-y uint))
+    (let ((pool (get-pool-details token-x token-y)))
+        (asserts! (is-eq (get-pool-details token-x token-y) none) ERR-POOL-ALREADY-EXISTS)
+        (asserts! (> initial-x u0) ERR-INVALID-AMOUNT)
+        (asserts! (> initial-y u0) ERR-INVALID-AMOUNT)
+        
+        ;; Transfer initial liquidity
+        (try! (contract-call? token-x transfer initial-x tx-sender (as-contract tx-sender)))
+        (try! (contract-call? token-y transfer initial-y tx-sender (as-contract tx-sender)))
+        
+        ;; Create pool
+        (map-set pools 
+            { token-x: token-x, token-y: token-y }
+            { liquidity-total: (sqrt (* initial-x initial-y)),
+              balance-x: initial-x,
+              balance-y: initial-y,
+              fee-rate: u300 }) ;; 0.3% fee
+        (ok true)))
