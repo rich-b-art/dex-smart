@@ -94,3 +94,62 @@
               balance-y: initial-y,
               fee-rate: u300 }) ;; 0.3% fee
         (ok true)))
+
+(define-public (add-liquidity 
+    (token-x principal) 
+    (token-y principal) 
+    (amount-x uint) 
+    (amount-y uint)
+    (min-liquidity uint)
+    (deadline uint))
+    (let ((pool (unwrap! (get-pool-details token-x token-y) ERR-POOL-NOT-FOUND))
+          (current-block-height block-height))
+        
+        ;; Checks
+        (asserts! (<= current-block-height deadline) ERR-DEADLINE-EXPIRED)
+        (asserts! (> amount-x u0) ERR-INVALID-AMOUNT)
+        (asserts! (> amount-y u0) ERR-INVALID-AMOUNT)
+        
+        (let ((optimal-amounts (get-deposit-amounts 
+                amount-x 
+                amount-y 
+                (get balance-x pool) 
+                (get balance-y pool))))
+            
+            ;; Transfer tokens to contract
+            (try! (contract-call? token-x transfer 
+                (get optimal-a optimal-amounts) 
+                tx-sender 
+                (as-contract tx-sender)))
+            (try! (contract-call? token-y transfer 
+                (get optimal-b optimal-amounts) 
+                tx-sender 
+                (as-contract tx-sender)))
+            
+            ;; Calculate new liquidity tokens
+            (let ((new-liquidity (/ (* (get optimal-a optimal-amounts) 
+                                     (get liquidity-total pool))
+                                  (get balance-x pool))))
+                
+                (asserts! (>= new-liquidity min-liquidity) ERR-SLIPPAGE-TOO-HIGH)
+                
+                ;; Update pool state
+                (map-set pools 
+                    { token-x: token-x, token-y: token-y }
+                    (merge pool {
+                        liquidity-total: (+ (get liquidity-total pool) new-liquidity),
+                        balance-x: (+ (get balance-x pool) (get optimal-a optimal-amounts)),
+                        balance-y: (+ (get balance-y pool) (get optimal-b optimal-amounts))
+                    }))
+                
+                ;; Update provider state
+                (let ((provider-state (get-provider-liquidity token-x token-y tx-sender)))
+                    (map-set liquidity-providers
+                        { pool-id: { token-x: token-x, token-y: token-y },
+                          provider: tx-sender }
+                        { liquidity-provided: (+ (default-to u0 
+                            (get liquidity-provided provider-state)) new-liquidity),
+                          rewards-claimed: (default-to u0 
+                            (get rewards-claimed provider-state)) }))
+                    
+                    (ok new-liquidity)))))
