@@ -193,3 +193,58 @@
                 }))
             
             (ok amount-out))))
+
+(define-public (remove-liquidity
+    (token-x principal)
+    (token-y principal)
+    (liquidity uint)
+    (min-amount-x uint)
+    (min-amount-y uint)
+    (deadline uint))
+    (let ((pool (unwrap! (get-pool-details token-x token-y) ERR-POOL-NOT-FOUND))
+          (current-block-height block-height)
+          (provider-state (unwrap! (get-provider-liquidity token-x token-y tx-sender) 
+                                 ERR-NOT-AUTHORIZED)))
+        
+        ;; Checks
+        (asserts! (<= current-block-height deadline) ERR-DEADLINE-EXPIRED)
+        (asserts! (>= (get liquidity-provided provider-state) liquidity) 
+                 ERR-INSUFFICIENT-BALANCE)
+        
+        (let ((amount-x (/ (* liquidity (get balance-x pool))
+                          (get liquidity-total pool)))
+              (amount-y (/ (* liquidity (get balance-y pool))
+                          (get liquidity-total pool))))
+            
+            (asserts! (>= amount-x min-amount-x) ERR-SLIPPAGE-TOO-HIGH)
+            (asserts! (>= amount-y min-amount-y) ERR-SLIPPAGE-TOO-HIGH)
+            
+            ;; Transfer tokens back to provider
+            (try! (as-contract (contract-call? token-x transfer 
+                amount-x 
+                (as-contract tx-sender) 
+                tx-sender)))
+            (try! (as-contract (contract-call? token-y transfer 
+                amount-y 
+                (as-contract tx-sender) 
+                tx-sender)))
+            
+            ;; Update pool state
+            (map-set pools 
+                { token-x: token-x, token-y: token-y }
+                (merge pool {
+                    liquidity-total: (- (get liquidity-total pool) liquidity),
+                    balance-x: (- (get balance-x pool) amount-x),
+                    balance-y: (- (get balance-y pool) amount-y)
+                }))
+            
+            ;; Update provider state
+            (map-set liquidity-providers
+                { pool-id: { token-x: token-x, token-y: token-y },
+                  provider: tx-sender }
+                { liquidity-provided: (- (get liquidity-provided provider-state) liquidity),
+                  rewards-claimed: (get rewards-claimed provider-state) })
+            
+            (ok (tuple 
+                (amount-x amount-x)
+                (amount-y amount-y))))))
