@@ -63,3 +63,14 @@
     (let ((amount-with-fee (* amount-in u997)))
         (/ (* amount-with-fee reserve-out)
            (+ (* reserve-in u1000) amount-with-fee))))
+
+(define-private (get-deposit-amounts (amount-a uint) (amount-b uint) (reserve-a uint) (reserve-b uint))
+    (let ((ratio-a (/ (* amount-a u1000000) reserve-a))
+          (ratio-b (/ (* amount-b u1000000) reserve-b)))
+        (if (< ratio-a ratio-b)
+            (tuple 
+                (optimal-a amount-a)
+                (optimal-b (/ (* amount-a reserve-b) reserve-a)))
+            (tuple 
+                (optimal-a (/ (* amount-b reserve-a) reserve-b))
+                (optimal-b amount-b)))))
