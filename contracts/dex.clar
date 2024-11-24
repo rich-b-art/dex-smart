@@ -20,3 +20,12 @@
 
 ;; Data Variables
 (define-data-var contract-owner principal tx-sender)
+
+;; Data Variables
+(define-data-var contract-owner principal tx-sender)
+(define-map pools 
+    { token-x: principal, token-y: principal }
+    { liquidity-total: uint,
+      balance-x: uint,
+      balance-y: uint,
+      fee-rate: uint })
