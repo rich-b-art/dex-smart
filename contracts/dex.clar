@@ -29,3 +29,9 @@
       balance-x: uint,
       balance-y: uint,
       fee-rate: uint })
+
+(define-map liquidity-providers
+    { pool-id: { token-x: principal, token-y: principal },
+      provider: principal }
+    { liquidity-provided: uint,
+      rewards-claimed: uint })
