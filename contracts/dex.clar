@@ -21,8 +21,21 @@
 ;; Data Variables
 (define-data-var contract-owner principal tx-sender)
 
-;; Data Variables
-(define-data-var contract-owner principal tx-sender)
+;; Helper functions
+;; Simplified sqrt implementation to avoid interdependency
+(define-private (sqrt (n uint))
+    (let ((iter (/ n u2)))  ;; Start with n/2 as initial guess
+        (if (<= n u1)
+            n  ;; Handle small numbers
+            (let ((quotient (/ n iter))
+                 (new-guess (/ (+ iter quotient) u2)))
+                (if (or 
+                    (is-eq iter new-guess)
+                    (is-eq iter (+ u1 new-guess)))
+                    iter
+                    new-guess)))))
+
+;; Data Maps
 (define-map pools 
     { token-x: principal, token-y: principal }
     { liquidity-total: uint,
@@ -44,7 +57,6 @@
       amount-x: uint,
       target-y: uint,
       expires-at: uint })
-
 
 ;; Getters
 (define-read-only (get-pool-details (token-x principal) (token-y principal))
@@ -76,19 +88,19 @@
                 (optimal-b amount-b)))))
 
 ;; Core functions
-(define-public (create-pool (token-x principal) (token-y principal) (initial-x uint) (initial-y uint))
-    (let ((pool (get-pool-details token-x token-y)))
-        (asserts! (is-eq (get-pool-details token-x token-y) none) ERR-POOL-ALREADY-EXISTS)
+(define-public (create-pool (token-x <ft-trait>) (token-y <ft-trait>) (initial-x uint) (initial-y uint))
+    (let ((pool (get-pool-details (contract-of token-x) (contract-of token-y))))
+        (asserts! (is-eq (get-pool-details (contract-of token-x) (contract-of token-y)) none) ERR-POOL-ALREADY-EXISTS)
         (asserts! (> initial-x u0) ERR-INVALID-AMOUNT)
         (asserts! (> initial-y u0) ERR-INVALID-AMOUNT)
         
         ;; Transfer initial liquidity
-        (try! (contract-call? token-x transfer initial-x tx-sender (as-contract tx-sender)))
-        (try! (contract-call? token-y transfer initial-y tx-sender (as-contract tx-sender)))
+        (try! (contract-call? token-x transfer initial-x tx-sender (as-contract tx-sender) none))
+        (try! (contract-call? token-y transfer initial-y tx-sender (as-contract tx-sender) none))
         
         ;; Create pool
         (map-set pools 
-            { token-x: token-x, token-y: token-y }
+            { token-x: (contract-of token-x), token-y: (contract-of token-y) }
             { liquidity-total: (sqrt (* initial-x initial-y)),
               balance-x: initial-x,
               balance-y: initial-y,
@@ -96,13 +108,13 @@
         (ok true)))
 
 (define-public (add-liquidity 
-    (token-x principal) 
-    (token-y principal) 
+    (token-x <ft-trait>) 
+    (token-y <ft-trait>) 
     (amount-x uint) 
     (amount-y uint)
     (min-liquidity uint)
     (deadline uint))
-    (let ((pool (unwrap! (get-pool-details token-x token-y) ERR-POOL-NOT-FOUND))
+    (let ((pool (unwrap! (get-pool-details (contract-of token-x) (contract-of token-y)) ERR-POOL-NOT-FOUND))
           (current-block-height block-height))
         
         ;; Checks
@@ -120,11 +132,13 @@
             (try! (contract-call? token-x transfer 
                 (get optimal-a optimal-amounts) 
                 tx-sender 
-                (as-contract tx-sender)))
+                (as-contract tx-sender) 
+                none))
             (try! (contract-call? token-y transfer 
                 (get optimal-b optimal-amounts) 
                 tx-sender 
-                (as-contract tx-sender)))
+                (as-contract tx-sender) 
+                none))
             
             ;; Calculate new liquidity tokens
             (let ((new-liquidity (/ (* (get optimal-a optimal-amounts) 
@@ -135,7 +149,7 @@
                 
                 ;; Update pool state
                 (map-set pools 
-                    { token-x: token-x, token-y: token-y }
+                    { token-x: (contract-of token-x), token-y: (contract-of token-y) }
                     (merge pool {
                         liquidity-total: (+ (get liquidity-total pool) new-liquidity),
                         balance-x: (+ (get balance-x pool) (get optimal-a optimal-amounts)),
@@ -143,9 +157,9 @@
                     }))
                 
                 ;; Update provider state
-                (let ((provider-state (get-provider-liquidity token-x token-y tx-sender)))
+                (let ((provider-state (get-provider-liquidity (contract-of token-x) (contract-of token-y) tx-sender)))
                     (map-set liquidity-providers
-                        { pool-id: { token-x: token-x, token-y: token-y },
+                        { pool-id: { token-x: (contract-of token-x), token-y: (contract-of token-y) },
                           provider: tx-sender }
                         { liquidity-provided: (+ (default-to u0 
                             (get liquidity-provided provider-state)) new-liquidity),
@@ -155,12 +169,12 @@
                     (ok new-liquidity)))))
 
 (define-public (swap-exact-tokens
-    (token-x principal)
-    (token-y principal)
+    (token-x <ft-trait>)
+    (token-y <ft-trait>)
     (amount-in uint)
     (min-amount-out uint)
     (deadline uint))
-    (let ((pool (unwrap! (get-pool-details token-x token-y) ERR-POOL-NOT-FOUND))
+    (let ((pool (unwrap! (get-pool-details (contract-of token-x) (contract-of token-y)) ERR-POOL-NOT-FOUND))
           (current-block-height block-height))
         
         ;; Checks
@@ -178,15 +192,17 @@
             (try! (contract-call? token-x transfer 
                 amount-in 
                 tx-sender 
-                (as-contract tx-sender)))
+                (as-contract tx-sender) 
+                none))
             (try! (as-contract (contract-call? token-y transfer 
                 amount-out 
                 (as-contract tx-sender) 
-                tx-sender)))
+                tx-sender 
+                none)))
             
             ;; Update pool state
             (map-set pools 
-                { token-x: token-x, token-y: token-y }
+                { token-x: (contract-of token-x), token-y: (contract-of token-y) }
                 (merge pool {
                     balance-x: (+ (get balance-x pool) amount-in),
                     balance-y: (- (get balance-y pool) amount-out)
@@ -195,15 +211,15 @@
             (ok amount-out))))
 
 (define-public (remove-liquidity
-    (token-x principal)
-    (token-y principal)
+    (token-x <ft-trait>)
+    (token-y <ft-trait>)
     (liquidity uint)
     (min-amount-x uint)
     (min-amount-y uint)
     (deadline uint))
-    (let ((pool (unwrap! (get-pool-details token-x token-y) ERR-POOL-NOT-FOUND))
+    (let ((pool (unwrap! (get-pool-details (contract-of token-x) (contract-of token-y)) ERR-POOL-NOT-FOUND))
           (current-block-height block-height)
-          (provider-state (unwrap! (get-provider-liquidity token-x token-y tx-sender) 
+          (provider-state (unwrap! (get-provider-liquidity (contract-of token-x) (contract-of token-y) tx-sender) 
                                  ERR-NOT-AUTHORIZED)))
         
         ;; Checks
@@ -223,15 +239,17 @@
             (try! (as-contract (contract-call? token-x transfer 
                 amount-x 
                 (as-contract tx-sender) 
-                tx-sender)))
+                tx-sender 
+                none)))
             (try! (as-contract (contract-call? token-y transfer 
                 amount-y 
                 (as-contract tx-sender) 
-                tx-sender)))
+                tx-sender 
+                none)))
             
             ;; Update pool state
             (map-set pools 
-                { token-x: token-x, token-y: token-y }
+                { token-x: (contract-of token-x), token-y: (contract-of token-y) }
                 (merge pool {
                     liquidity-total: (- (get liquidity-total pool) liquidity),
                     balance-x: (- (get balance-x pool) amount-x),
@@ -240,7 +258,7 @@
             
             ;; Update provider state
             (map-set liquidity-providers
-                { pool-id: { token-x: token-x, token-y: token-y },
+                { pool-id: { token-x: (contract-of token-x), token-y: (contract-of token-y) },
                   provider: tx-sender }
                 { liquidity-provided: (- (get liquidity-provided provider-state) liquidity),
                   rewards-claimed: (get rewards-claimed provider-state) })
@@ -248,19 +266,3 @@
             (ok (tuple 
                 (amount-x amount-x)
                 (amount-y amount-y))))))
-
-;; Helper functions
-(define-private (sqrt-iter (n uint) (iter uint) (guess uint))
-    (let ((quotient (/ n guess))
-          (new-guess (/ (+ guess quotient) u2)))
-        (if (or 
-            (is-eq iter u0)
-            (is-eq guess new-guess) 
-            (is-eq guess (+ u1 new-guess)))
-            guess
-            (sqrt-iter n (- iter u1) new-guess))))
-
-(define-private (sqrt (n uint))
-    (if (is-eq n u0)
-        u0
-        (sqrt-iter n u10 n)))  ;; Set maximum 10 iterations                
