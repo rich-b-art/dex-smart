@@ -35,3 +35,12 @@
       provider: principal }
     { liquidity-provided: uint,
       rewards-claimed: uint })
+
+(define-map orders
+    uint
+    { maker: principal,
+      token-x: principal,
+      token-y: principal,
+      amount-x: uint,
+      target-y: uint,
+      expires-at: uint })
