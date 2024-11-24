@@ -153,3 +153,43 @@
                             (get rewards-claimed provider-state)) }))
                     
                     (ok new-liquidity)))))
+
+(define-public (swap-exact-tokens
+    (token-x principal)
+    (token-y principal)
+    (amount-in uint)
+    (min-amount-out uint)
+    (deadline uint))
+    (let ((pool (unwrap! (get-pool-details token-x token-y) ERR-POOL-NOT-FOUND))
+          (current-block-height block-height))
+        
+        ;; Checks
+        (asserts! (<= current-block-height deadline) ERR-DEADLINE-EXPIRED)
+        (asserts! (> amount-in u0) ERR-INVALID-AMOUNT)
+        
+        (let ((amount-out (calculate-price 
+                amount-in 
+                (get balance-x pool) 
+                (get balance-y pool))))
+            
+            (asserts! (>= amount-out min-amount-out) ERR-SLIPPAGE-TOO-HIGH)
+            
+            ;; Transfer tokens
+            (try! (contract-call? token-x transfer 
+                amount-in 
+                tx-sender 
+                (as-contract tx-sender)))
+            (try! (as-contract (contract-call? token-y transfer 
+                amount-out 
+                (as-contract tx-sender) 
+                tx-sender)))
+            
+            ;; Update pool state
+            (map-set pools 
+                { token-x: token-x, token-y: token-y }
+                (merge pool {
+                    balance-x: (+ (get balance-x pool) amount-in),
+                    balance-y: (- (get balance-y pool) amount-out)
+                }))
+            
+            (ok amount-out))))
